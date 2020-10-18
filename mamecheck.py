@@ -121,13 +121,47 @@ def create_romfile_checklist(rom_map, set_type):
                         del cur_romset['rom_digests'][rom_name]
         return
 
+def display_stats(stats):
+    """ Display statistics """
+    print("""
+-- Summary of database --
+%d romsets missing (zip not found in romdir)
+%d bad romsets (zip found in romdir, but containing corrupted or missing roms)
+
+%d missing roms (needed rom not found in its zip file)
+%d bad roms (rom is found in its zip file, but has wrong digest)
+""" % (len(stats['missing_files']),
+       len(stats['bad_files']),
+       sum([len(v) for v in stats['missing_roms'].values()]),
+       sum([len(v) for v in stats['bad_roms'].values()])))
+
+    print("Missing files list")
+    for zip_file in stats['missing_files']:
+        print("\t-", zip_file + ".zip")
+
+    print("Bad files list")
+    for zip_file in stats['bad_files']:
+        print("\t-", zip_file + ".zip")
+
+    print("Missing ROMS list")
+    for zip_file, roms_list in stats['missing_roms'].items():
+        print("\t-", zip_file + ".zip")
+        for rom_name in roms_list:
+            print("\t\t-", rom_name)
+
+    print("Bad ROMS list")
+    for zip_file, roms_list in stats['bad_roms'].items():
+        print("\t-", zip_file + ".zip")
+        for rom_name in roms_list:
+            print("\t\t-", rom_name)
+
 def check_roms(rom_map, rom_dir):
     """ Check roms in rompath """
-    missing_files = list()
-    ok_files = list()
-    missing_roms = list()
-    bad_roms = list()
-
+    stats = {'missing_files': list(), # romset not found
+             'bad_files': list(),     # romset found but contains corrupted or missing roms
+             'missing_roms': dict(),  # roms missing (format romset: (rom1, rom2,...))
+             'bad_roms': dict()       # roms with bad digest (format romset: (rom1, rom2,...))
+            }
     cur_rom = 1
     num_roms = len(rom_map)
 
@@ -144,22 +178,18 @@ def check_roms(rom_map, rom_dir):
             zip_ok = True
             for rom_name, digest in map_digests.items():
                 if rom_name not in zip_digests:
-                    missing_roms.append(zip_name + "/" + rom_name)
+                    stats['missing_roms'].setdefault(zip_name, list()).append(rom_name)
                     zip_ok = False
                 elif digest != zip_digests[rom_name]:
-                    bad_roms.append(zip_name + "/" + rom_name)
+                    stats['bad_roms'].setdefault(zip_name, list()).append(rom_name)
                     zip_ok = False
-            if zip_ok:
-                ok_files.append(zip_file)
+            if not zip_ok:
+                stats['bad_files'].append(zip_file)
         else:
-            missing_files.append(zip_name)
+            stats['missing_files'].append(zip_name)
         cur_rom += 1
 
-    print("zip ok: %d\nbad roms: %d\nmissing roms: %d\nmissing_files: %d" %
-          (len(ok_files), len(bad_roms), len(missing_roms), len(missing_files)))
-    logging.debug("bad roms: %d", bad_roms)
-    logging.debug("missing roms: %d", missing_roms)
-    logging.debug("missing files: %d", missing_files)
+    display_stats(stats)
 
 ARGS = parse_args()
 ROM_MAP = create_romfile_map(ARGS.dat)
