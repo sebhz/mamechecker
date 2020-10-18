@@ -77,7 +77,9 @@ def create_romfile_checklist(rom_map, set_type):
     """
     if set_type == "nonmerged":
         return
+
     if set_type == "merged":
+        delete_list = list()
         for zip_name, romset in rom_map.items():
             if 'cloneof' in romset:
                 parent_name = romset['cloneof']
@@ -87,8 +89,11 @@ def create_romfile_checklist(rom_map, set_type):
                         parent_romset['rom_digests'][rom_name] = rom_digest
                     else:
                         pass # TODO: coherency check. Both roms should have the same digest
-                del rom_map[zip_name]
+                delete_list.append(zip_name)
+        for zip_name in delete_list:
+            del rom_map[zip_name]
         return
+
     if set_type == "split":
         for zip_name, romset in rom_map.items():
             if 'cloneof' in romset:
@@ -137,6 +142,7 @@ def check_roms(rom_map, rom_dir):
           (len(ok_files), len(bad_roms), len(missing_roms), len(missing_files)))
     print("bad roms:", bad_roms)
     print("missing roms:", missing_roms)
+    print("missing files:", missing_files)
 
 ARGS = parse_args()
 ROM_MAP = create_romfile_map(ARGS.dat)
