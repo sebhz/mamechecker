@@ -88,7 +88,7 @@ def create_romfile_checklist(rom_map, set_type):
                     else:
                         pass # TODO: coherency check. Both roms should have the same digest
                 del rom_map[zip_name]
-            return
+        return
     if set_type == "split":
         for zip_name, romset in rom_map.items():
             if 'cloneof' in romset:
@@ -135,6 +135,8 @@ def check_roms(rom_map, rom_dir):
 
     print("zip ok: %d\nbad roms: %d\nmissing roms: %d\nmissing_files: %d" %
           (len(ok_files), len(bad_roms), len(missing_roms), len(missing_files)))
+    print("bad roms:", bad_roms)
+    print("missing roms:", missing_roms)
 
 ARGS = parse_args()
 ROM_MAP = create_romfile_map(ARGS.dat)
