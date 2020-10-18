@@ -4,6 +4,7 @@
 import argparse
 import glob
 import hashlib
+import logging
 import os
 import zipfile
 import xml.etree.ElementTree as ET
@@ -11,18 +12,29 @@ import xml.etree.ElementTree as ET
 def parse_args():
     """ Parses command line arguments """
     parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--dat",
+                        required=True,
+                        help="Datfile to use",
+                        type=str)
+    parser.add_argument("-l", "--log",
+                        help="Log level",
+                        default="error",
+                        choices=("debug", "info", "warning", "error", "critical"),
+                        type=str)
     parser.add_argument("-t", "--set-type",
                         help="Type of romset to check",
                         default="nonmerged",
                         choices=("merged", "split", "nonmerged"),
                         type=str)
-    parser.add_argument("-d", "--dat",
-                        required=True,
-                        help="Datfile to use",
-                        type=str)
     parser.add_argument("rom_dir", help="Directory where you roms are stored",
                         type=str)
     args = parser.parse_args()
+
+    numeric_level = getattr(logging, args.log.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % args.log)
+    logging.basicConfig(level=numeric_level)
+
     return args
 
 def get_game_romset(game):
@@ -80,28 +92,33 @@ def create_romfile_checklist(rom_map, set_type):
 
     if set_type == "merged":
         delete_list = list()
-        for zip_name, romset in rom_map.items():
-            if 'cloneof' in romset:
-                parent_name = romset['cloneof']
-                parent_romset = rom_map[parent_name] # TODO: check for errors !
-                for rom_name, rom_digest in romset['rom_digests'].items():
-                    if rom_name not in parent_romset['rom_digests']:
-                        parent_romset['rom_digests'][rom_name] = rom_digest
-                    else:
-                        pass # TODO: coherency check. Both roms should have the same digest
-                delete_list.append(zip_name)
-        for zip_name in delete_list:
-            del rom_map[zip_name]
+        for cur_name, cur_romset in rom_map.items():
+            if 'cloneof' in cur_romset:
+                parent_name = cur_romset['cloneof']
+                if parent_name in rom_map:
+                    parent_romset = rom_map[parent_name]
+                    for rom_name, rom_digest in cur_romset['rom_digests'].items():
+                        if rom_name not in parent_romset['rom_digests']:
+                            parent_romset['rom_digests'][rom_name] = rom_digest
+                        elif parent_romset['rom_digests'][rom_name] != rom_digest:
+                            print("Incoherency between parent and clone ROM digest (%s)" %
+                                  (rom_name))
+                    delete_list.append(cur_name)
+                else:
+                    print("cur_romset %s is marked as clone of romset %s, but %s is not found" %
+                          (cur_romset, parent_name, parent_name))
+        for cur_name in delete_list:
+            del rom_map[cur_name]
         return
 
     if set_type == "split":
-        for zip_name, romset in rom_map.items():
-            if 'cloneof' in romset:
-                parent_name = romset['cloneof']
+        for cur_name, cur_romset in rom_map.items():
+            if 'cloneof' in cur_romset:
+                parent_name = cur_romset['cloneof']
                 parent_romset = rom_map[parent_name]
                 for rom_name, rom_digest in parent_romset['rom_digests'].items():
-                    if rom_name in romset['rom_digests']:
-                        del romset['rom_digests'][rom_name]
+                    if rom_name in cur_romset['rom_digests']:
+                        del cur_romset['rom_digests'][rom_name]
         return
 
 def check_roms(rom_map, rom_dir):
@@ -125,11 +142,11 @@ def check_roms(rom_map, rom_dir):
             zip_digests = get_zip_member_digests(zip_file)
             map_digests = rom_map[zip_name]['rom_digests']
             zip_ok = True
-            for rom_name, digest in zip_digests.items():
-                if rom_name not in map_digests:
+            for rom_name, digest in map_digests.items():
+                if rom_name not in zip_digests:
                     missing_roms.append(zip_name + "/" + rom_name)
                     zip_ok = False
-                elif digest != map_digests[rom_name]:
+                elif digest != zip_digests[rom_name]:
                     bad_roms.append(zip_name + "/" + rom_name)
                     zip_ok = False
             if zip_ok:
@@ -140,9 +157,9 @@ def check_roms(rom_map, rom_dir):
 
     print("zip ok: %d\nbad roms: %d\nmissing roms: %d\nmissing_files: %d" %
           (len(ok_files), len(bad_roms), len(missing_roms), len(missing_files)))
-    print("bad roms:", bad_roms)
-    print("missing roms:", missing_roms)
-    print("missing files:", missing_files)
+    logging.debug("bad roms: %d", bad_roms)
+    logging.debug("missing roms: %d", missing_roms)
+    logging.debug("missing files: %d", missing_files)
 
 ARGS = parse_args()
 ROM_MAP = create_romfile_map(ARGS.dat)
