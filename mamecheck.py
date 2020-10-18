@@ -137,11 +137,11 @@ def display_stats(stats):
 
     print("Missing files list")
     for zip_file in stats['missing_files']:
-        print("\t-", zip_file + ".zip")
+        print("\t-", os.path.basename(zip_file) + ".zip")
 
     print("Bad files list")
     for zip_file in stats['bad_files']:
-        print("\t-", zip_file + ".zip")
+        print("\t-", os.path.basename(zip_file) + ".zip")
 
     print("Missing ROMS list")
     for zip_file, roms_list in stats['missing_roms'].items():
@@ -175,16 +175,13 @@ def check_roms(rom_map, rom_dir):
         if zip_file in zip_list:
             zip_digests = get_zip_member_digests(zip_file)
             map_digests = rom_map[zip_name]['rom_digests']
-            zip_ok = True
             for rom_name, digest in map_digests.items():
                 if rom_name not in zip_digests:
                     stats['missing_roms'].setdefault(zip_name, list()).append(rom_name)
-                    zip_ok = False
+                    stats['bad_files'].append(zip_file)
                 elif digest != zip_digests[rom_name]:
                     stats['bad_roms'].setdefault(zip_name, list()).append(rom_name)
-                    zip_ok = False
-            if not zip_ok:
-                stats['bad_files'].append(zip_file)
+                    stats['bad_files'].append(zip_file)
         else:
             stats['missing_files'].append(zip_name)
         cur_rom += 1
