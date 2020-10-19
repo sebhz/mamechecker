@@ -47,7 +47,8 @@ def get_game_romset(game):
 
     romset['rom_digests'] = dict()
     for rom in game.findall('rom'):
-        romset['rom_digests'][rom.get('name')] = rom.get('sha1')
+        if 'sha1' in rom: # No sha1 possible in case of bad dump
+            romset['rom_digests'][rom.get('name')] = rom['sha1']
 
     return romset
 
@@ -77,49 +78,63 @@ def get_zip_member_digests(zipfile_name):
 
     return digests
 
+def create_merged_checklist(rom_map):
+    """ Creates a dict of roms to check by modifying the rom map
+        in-place depending on the set-type
+        Merged roms: the parent zip file contains all the ROMS
+        for the parent and its clones.
+            -> Move all the clones ROMs to their parent, then delete the
+               clone from the map
+    """
+    delete_list = list()
+    for cur_name, cur_romset in rom_map.items():
+        if 'cloneof' not in cur_romset:
+            continue
+        parent_name = cur_romset['cloneof']
+        if parent_name in rom_map:
+            parent_romset = rom_map[parent_name]
+            for cur_rom_name, cur_rom_digest in cur_romset['rom_digests'].items():
+                if cur_rom_name not in parent_romset['rom_digests']:
+                    parent_romset['rom_digests'][cur_rom_name] = cur_rom_digest
+                elif parent_romset['rom_digests'][cur_rom_name] != cur_rom_digest:
+                    print("Incoherency between parent and clone ROM digest (%s)" %
+                          (cur_rom_name))
+            delete_list.append(cur_name)
+        else:
+            print("cur_romset %s is marked as clone of romset %s, but %s is not found" %
+                  (cur_romset, parent_name, parent_name))
+    for cur_name in delete_list:
+        del rom_map[cur_name]
+
+def create_split_checklist(rom_map):
+    """ Creates a dict of roms to check by modifying the rom map
+        in-place depending on the set-type
+        Split roms: the clone zip file contains only the files needed
+        on top of the parent.
+           -> delete all the parent ROMS references from the clone
+    """
+    for cur_romset in rom_map.values():
+        if 'cloneof' in cur_romset:
+            parent_name = cur_romset['cloneof']
+            parent_romset = rom_map[parent_name]
+            for parent_rom_name, parent_rom_digest in parent_romset['rom_digests'].items():
+                if parent_rom_name in cur_romset['rom_digests']:
+                    if cur_romset['rom_digests'][parent_rom_name] != parent_rom_digest:
+                        print("Incoherency between parent and clone ROM digest (%s)" %
+                              (parent_rom_name))
+                    del cur_romset['rom_digests'][parent_rom_name]
+
 def create_romfile_checklist(rom_map, set_type):
     """ Creates a dict of roms to check by modifying the rom map
-        in-place depending on the set-type:
-           - nonmerged: each game zip file contains all the ROMS for the game
-                -> do nothing, the map is what we need to test against
-           - merged: the parent zip file contains all the ROMS for the parent and its clones.
-                -> move all the clones ROMs to their parent, then delete the clone from the map
-           - split: the clone zip file contains only the files needed on top of the parent.
-                -> delete all the parent ROMS references from the clone
+        in-place depending on the set-type
+        Nonmerged roms: each game zip file contains all the ROMS for the game
+            -> do nothing, the map is what we need to test against
     """
-    if set_type == "nonmerged":
-        return
-
     if set_type == "merged":
-        delete_list = list()
-        for cur_name, cur_romset in rom_map.items():
-            if 'cloneof' in cur_romset:
-                parent_name = cur_romset['cloneof']
-                if parent_name in rom_map:
-                    parent_romset = rom_map[parent_name]
-                    for rom_name, rom_digest in cur_romset['rom_digests'].items():
-                        if rom_name not in parent_romset['rom_digests']:
-                            parent_romset['rom_digests'][rom_name] = rom_digest
-                        elif parent_romset['rom_digests'][rom_name] != rom_digest:
-                            print("Incoherency between parent and clone ROM digest (%s)" %
-                                  (rom_name))
-                    delete_list.append(cur_name)
-                else:
-                    print("cur_romset %s is marked as clone of romset %s, but %s is not found" %
-                          (cur_romset, parent_name, parent_name))
-        for cur_name in delete_list:
-            del rom_map[cur_name]
-        return
+        create_merged_checklist(rom_map)
 
     if set_type == "split":
-        for cur_name, cur_romset in rom_map.items():
-            if 'cloneof' in cur_romset:
-                parent_name = cur_romset['cloneof']
-                parent_romset = rom_map[parent_name]
-                for rom_name, rom_digest in parent_romset['rom_digests'].items():
-                    if rom_name in cur_romset['rom_digests']:
-                        del cur_romset['rom_digests'][rom_name]
-        return
+        create_split_checklist(rom_map)
 
 def display_stats(stats):
     """ Display statistics """
@@ -149,18 +164,18 @@ def display_stats(stats):
         for rom_name in roms_list:
             print("\t\t-", rom_name)
 
-    print("Bad ROMS list")
+    print("Bad ROMS list (rom, expected digest, obtained digest)")
     for zip_file, roms_list in stats['bad_roms'].items():
         print("\t-", zip_file + ".zip")
-        for rom_name in roms_list:
-            print("\t\t-", rom_name)
+        for rom_desc in roms_list:
+            print("\t\t-", rom_desc)
 
 def check_roms(rom_map, rom_dir):
     """ Check roms in rompath """
     stats = {'missing_files': list(), # romset not found
              'bad_files': list(),     # romset found but contains corrupted or missing roms
              'missing_roms': dict(),  # roms missing (format romset: (rom1, rom2,...))
-             'bad_roms': dict()       # roms with bad digest (format romset: (rom1, rom2,...))
+             'bad_roms': dict()       # roms with bad digest
             }
     cur_rom = 1
     num_roms = len(rom_map)
@@ -178,14 +193,18 @@ def check_roms(rom_map, rom_dir):
             for rom_name, digest in map_digests.items():
                 if rom_name not in zip_digests:
                     stats['missing_roms'].setdefault(zip_name, list()).append(rom_name)
-                    stats['bad_files'].append(zip_file)
+                    stats['bad_files'].append(zip_name)
                 elif digest != zip_digests[rom_name]:
-                    stats['bad_roms'].setdefault(zip_name, list()).append(rom_name)
-                    stats['bad_files'].append(zip_file)
+                    stats['bad_roms'].setdefault(zip_name, list()).append((rom_name,
+                                                                           zip_digests[rom_name],
+                                                                           digest,)
+                                                                         )
+                    stats['bad_files'].append(zip_name)
         else:
             stats['missing_files'].append(zip_name)
         cur_rom += 1
 
+    stats['bad_file'] = list(set(stats['bad_files'])) # Remove duplicates
     display_stats(stats)
 
 ARGS = parse_args()
