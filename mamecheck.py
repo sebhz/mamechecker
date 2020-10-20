@@ -4,7 +4,6 @@
 import argparse
 import glob
 import hashlib
-import logging
 import os
 import zipfile
 import xml.etree.ElementTree as ET
@@ -16,11 +15,6 @@ def parse_args():
                         required=True,
                         help="Datfile to use",
                         type=str)
-    parser.add_argument("-l", "--log",
-                        help="Log level",
-                        default="error",
-                        choices=("debug", "info", "warning", "error", "critical"),
-                        type=str)
     parser.add_argument("-t", "--set-type",
                         help="Type of romset to check",
                         default="nonmerged",
@@ -30,25 +24,19 @@ def parse_args():
                         type=str)
     args = parser.parse_args()
 
-    numeric_level = getattr(logging, args.log.upper(), None)
-    if not isinstance(numeric_level, int):
-        raise ValueError('Invalid log level: %s' % args.log)
-    logging.basicConfig(level=numeric_level)
-
     return args
 
 def get_game_romset(game):
     """ Get a romset from an XML blurb """
     romset = dict()
 
-    for attr in ('name', 'cloneof', 'romof'):
-        if attr in game.attrib:
-            romset[attr] = game.get(attr)
+    for attr in game.attrib:
+        romset[attr] = game.get(attr)
 
     romset['rom_digests'] = dict()
     for rom in game.findall('rom'):
-        if 'sha1' in rom: # No sha1 possible in case of bad dump
-            romset['rom_digests'][rom.get('name')] = rom['sha1']
+        if 'sha1' in rom.attrib: # No sha1 possible in case of bad dump
+            romset['rom_digests'][rom.get('name')] = rom.get('sha1')
 
     return romset
 
@@ -88,21 +76,21 @@ def create_merged_checklist(rom_map):
     """
     delete_list = list()
     for cur_name, cur_romset in rom_map.items():
-        if 'cloneof' not in cur_romset:
+        if 'romof' not in cur_romset:
             continue
-        parent_name = cur_romset['cloneof']
+        parent_name = cur_romset['romof']
         if parent_name in rom_map:
             parent_romset = rom_map[parent_name]
             for cur_rom_name, cur_rom_digest in cur_romset['rom_digests'].items():
                 if cur_rom_name not in parent_romset['rom_digests']:
                     parent_romset['rom_digests'][cur_rom_name] = cur_rom_digest
                 elif parent_romset['rom_digests'][cur_rom_name] != cur_rom_digest:
-                    print("Incoherency between parent and clone ROM digest (%s)" %
-                          (cur_rom_name))
+                    print("Incoherency between parent (%s) and clone (%s) ROM digest (%s)" %
+                          (parent_name, cur_name, cur_rom_name))
             delete_list.append(cur_name)
         else:
-            print("cur_romset %s is marked as clone of romset %s, but %s is not found" %
-                  (cur_romset, parent_name, parent_name))
+            print("romset %s is marked as clone of romset %s, but %s is not found" %
+                  (cur_name, parent_name, parent_name))
     for cur_name in delete_list:
         del rom_map[cur_name]
 
@@ -114,8 +102,11 @@ def create_split_checklist(rom_map):
            -> delete all the parent ROMS references from the clone
     """
     for cur_romset in rom_map.values():
-        if 'cloneof' in cur_romset:
-            parent_name = cur_romset['cloneof']
+        if 'romof' not in cur_romset:
+            continue
+
+        parent_name = cur_romset['romof']
+        if parent_name in rom_map:
             parent_romset = rom_map[parent_name]
             for parent_rom_name, parent_rom_digest in parent_romset['rom_digests'].items():
                 if parent_rom_name in cur_romset['rom_digests']:
@@ -123,6 +114,9 @@ def create_split_checklist(rom_map):
                         print("Incoherency between parent and clone ROM digest (%s)" %
                               (parent_rom_name))
                     del cur_romset['rom_digests'][parent_rom_name]
+        else:
+            print("romset %s is marked as clone of romset %s, but %s is not found" %
+                  (cur_romset['name'], parent_name, parent_name))
 
 def create_romfile_checklist(rom_map, set_type):
     """ Creates a dict of roms to check by modifying the rom map
