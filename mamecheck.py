@@ -81,6 +81,8 @@ def create_merged_checklist(rom_map):
         parent_name = cur_romset['romof']
         if parent_name in rom_map:
             parent_romset = rom_map[parent_name]
+            if 'isbios' in parent_romset:
+                continue
             for cur_rom_name, cur_rom_digest in cur_romset['rom_digests'].items():
                 if cur_rom_name not in parent_romset['rom_digests']:
                     parent_romset['rom_digests'][cur_rom_name] = cur_rom_digest
