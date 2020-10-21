@@ -101,22 +101,21 @@ def create_split_checklist(rom_map):
         on top of the parent.
            -> delete all the parent ROMS references from the clone
     """
-    for cur_romset in rom_map.values():
+    for cur_name, cur_romset in rom_map.items():
         if 'romof' not in cur_romset:
             continue
-
         parent_name = cur_romset['romof']
         if parent_name in rom_map:
             parent_romset = rom_map[parent_name]
             for parent_rom_name, parent_rom_digest in parent_romset['rom_digests'].items():
                 if parent_rom_name in cur_romset['rom_digests']:
                     if cur_romset['rom_digests'][parent_rom_name] != parent_rom_digest:
-                        print("Incoherency between parent and clone ROM digest (%s)" %
-                              (parent_rom_name))
+                        print("Incoherency between parent (%s) and clone (%s) ROM digest (%s)" %
+                              (parent_name, cur_name, parent_rom_name))
                     del cur_romset['rom_digests'][parent_rom_name]
         else:
             print("romset %s is marked as clone of romset %s, but %s is not found" %
-                  (cur_romset['name'], parent_name, parent_name))
+                  (cur_name, parent_name, parent_name))
 
 def create_romfile_checklist(rom_map, set_type):
     """ Creates a dict of roms to check by modifying the rom map
@@ -167,7 +166,7 @@ def display_stats(stats):
 def check_roms(rom_map, rom_dir):
     """ Check roms in rompath """
     stats = {'missing_files': list(), # romset not found
-             'bad_files': list(),     # romset found but contains corrupted or missing roms
+             'bad_files': set(),     # romset found but contains corrupted or missing roms
              'missing_roms': dict(),  # roms missing (format romset: (rom1, rom2,...))
              'bad_roms': dict()       # roms with bad digest
             }
@@ -187,18 +186,17 @@ def check_roms(rom_map, rom_dir):
             for rom_name, digest in map_digests.items():
                 if rom_name not in zip_digests:
                     stats['missing_roms'].setdefault(zip_name, list()).append(rom_name)
-                    stats['bad_files'].append(zip_name)
+                    stats['bad_files'].add(zip_name)
                 elif digest != zip_digests[rom_name]:
                     stats['bad_roms'].setdefault(zip_name, list()).append((rom_name,
                                                                            zip_digests[rom_name],
                                                                            digest,)
                                                                          )
-                    stats['bad_files'].append(zip_name)
+                    stats['bad_files'].add(zip_name)
         else:
             stats['missing_files'].append(zip_name)
         cur_rom += 1
 
-    stats['bad_file'] = list(set(stats['bad_files'])) # Remove duplicates
     display_stats(stats)
 
 ARGS = parse_args()
