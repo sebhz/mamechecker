@@ -35,7 +35,10 @@ def get_game_romset(game):
 
     romset['rom_digests'] = dict()
     for rom in game.findall('rom'):
-        if 'sha1' in rom.attrib: # No sha1 possible in case of bad dump
+        status = rom.attrib.get('status')
+        if status == 'nodump':
+            continue # ROM not dumped
+        if 'sha1' in rom.attrib: # Happens sometimes
             romset['rom_digests'][rom.get('name')] = rom.get('sha1')
 
     return romset
@@ -179,8 +182,7 @@ def check_roms(rom_map, rom_dir):
     zip_list = glob.glob(os.path.join(rom_dir, '*.zip'))
 
     for zip_name in rom_map:
-        if cur_rom % 128 == 0:
-            print("%d/%d" % (cur_rom, num_roms))
+        print("Checking romset %s (%d/%d)          " % (zip_name, cur_rom, num_roms), end='\r')
         zip_file = os.path.join(rom_dir, zip_name) + ".zip"
         if zip_file in zip_list:
             zip_digests = get_zip_member_digests(zip_file)
